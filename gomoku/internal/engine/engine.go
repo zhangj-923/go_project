@@ -40,19 +40,32 @@ func NewEngine() *Engine {
 	rand.Seed(time.Now().UnixNano())
 	ui.InitFonts()
 	return &Engine{
-		state:       Menu,
-		board:       board.NewBoard(),
-		humanPlayer: board.Black,
-		aiSide:      board.White,
-		turn:        board.Black,
-		uiState:     ui.NewUIState(),
-		aiPlayer:    ai.NewAI(ai.Normal),
+		state:        Menu,
+		board:        board.NewBoard(),
+		humanPlayer:  board.Black,
+		aiSide:       board.White,
+		turn:         board.Black,
+		uiState:      ui.NewUIState(),
+		aiPlayer:     ai.NewAI(ai.Normal),
+		screenWidth:  1280,
+		screenHeight: 900,
 	}
 }
 
-func (e *Engine) Update() error {
-	e.screenWidth, e.screenHeight = ebiten.WindowSize()
+func (e *Engine) isClicked() (bool, int, int) {
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		mx, my := ebiten.CursorPosition()
+		return true, mx, my
+	}
+	touchIDs := inpututil.AppendJustPressedTouchIDs(nil)
+	if len(touchIDs) > 0 {
+		tx, ty := ebiten.TouchPosition(touchIDs[0])
+		return true, tx, ty
+	}
+	return false, 0, 0
+}
 
+func (e *Engine) Update() error {
 	e.uiState.Update(e.screenWidth, e.screenHeight)
 
 	switch e.state {
@@ -68,8 +81,7 @@ func (e *Engine) Update() error {
 }
 
 func (e *Engine) updateMenu() {
-	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-		mx, my := ebiten.CursorPosition()
+	if clicked, mx, my := e.isClicked(); clicked {
 		// Start game button
 		cx, cy := e.screenWidth/2, e.screenHeight/2
 		if mx >= cx-120 && mx <= cx+120 && my >= cy-25 && my <= cy+25 {
@@ -116,9 +128,10 @@ func (e *Engine) updatePlaying() {
 
 		e.hoverX, e.hoverY = bx, by
 
-		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-			if e.board.IsValidMove(bx, by) {
-				e.board.PlaceStone(bx, by, e.humanPlayer)
+		if clicked, cx, cy := e.isClicked(); clicked {
+			cbx, cby := e.uiState.ScreenToBoard(cx, cy, e.screenWidth, e.screenHeight)
+			if e.board.IsValidMove(cbx, cby) {
+				e.board.PlaceStone(cbx, cby, e.humanPlayer)
 				e.checkGameOver()
 				e.turn = e.aiSide
 			}
@@ -127,7 +140,7 @@ func (e *Engine) updatePlaying() {
 }
 
 func (e *Engine) updateGameOver() {
-	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+	if clicked, _, _ := e.isClicked(); clicked {
 		e.state = Menu
 	}
 }
@@ -140,6 +153,11 @@ func (e *Engine) checkGameOver() {
 
 func (e *Engine) Draw(screen *ebiten.Image) {
 	screen.Fill(color.RGBA{240, 230, 210, 255}) // Background
+
+	if b := screen.Bounds(); b.Dx() > 0 && b.Dy() > 0 {
+		e.screenWidth = b.Dx()
+		e.screenHeight = b.Dy()
+	}
 
 	switch e.state {
 	case Menu:
@@ -154,5 +172,9 @@ func (e *Engine) Draw(screen *ebiten.Image) {
 }
 
 func (e *Engine) Layout(outsideWidth, outsideHeight int) (int, int) {
-	return outsideWidth, outsideHeight
+	if outsideWidth > 0 && outsideHeight > 0 {
+		e.screenWidth = outsideWidth
+		e.screenHeight = outsideHeight
+	}
+	return e.screenWidth, e.screenHeight
 }
