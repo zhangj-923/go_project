@@ -3,7 +3,7 @@ package board
 import "testing"
 
 func TestBoardWinCondition(t *testing.T) {
-	b := NewBoard()
+	b := NewBoard(15)
 
 	// Horizontal Win
 	for i := 0; i < 5; i++ {
@@ -15,7 +15,7 @@ func TestBoardWinCondition(t *testing.T) {
 	}
 
 	// Reset
-	b = NewBoard()
+	b = NewBoard(15)
 
 	// Vertical Win
 	for i := 0; i < 5; i++ {
@@ -28,7 +28,7 @@ func TestBoardWinCondition(t *testing.T) {
 }
 
 func TestBoardUndo(t *testing.T) {
-	b := NewBoard()
+	b := NewBoard(15)
 	b.PlaceStone(7, 7, Black)
 
 	if b.Grid[7][7] != Black {

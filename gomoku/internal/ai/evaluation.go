@@ -2,35 +2,173 @@ package ai
 
 import (
 	"gomoku/internal/board"
-	"math/rand"
+	"math"
 )
 
-// Heuristic Evaluation function for Normal/Hard AI
-func (a *AI) evaluateMove(b *board.Board, p board.Player) board.Point {
-	bestScore := -1
-	var bestMoves []board.Point
+// Scores for standard Gomoku tactical shapes
+const (
+	ScoreFive         = 10000000 // 连五 (必胜)
+	ScoreOpenFour     = 1000000  // 活四 (必杀)
+	ScoreDoubleFour   = 1000000  // 双冲四 (必杀)
+	ScoreFourThree    = 500000   // 冲四活三 (绝杀)
+	ScoreDoubleThree  = 200000   // 双活三 (绝杀)
+	ScoreBlockedFour  = 100000   // 冲四
+	ScoreOpenThree    = 50000    // 活三
+	ScoreBlockedThree = 5000     // 眠三
+	ScoreOpenTwo      = 2000     // 活二
+	ScoreBlockedTwo   = 200      // 眠二
+)
 
-	for y := 0; y < board.Size; y++ {
-		for x := 0; x < board.Size; x++ {
-			if b.Grid[y][x] == board.Empty {
-				// Normal difficulty only checks 1 step ahead based on scoring
-				// Multiply defense score slightly more to prioritize blocking
-				score := EvaluatePosition(b, x, y, p) + (EvaluatePosition(b, x, y, opponent(p)) * 12 / 10)
+// EvaluatePosition evaluates the tactical score of placing player p's stone at (x, y)
+func EvaluatePosition(b *board.Board, x, y int, p board.Player) int {
+	if b.Grid[y][x] != board.Empty {
+		return 0
+	}
 
-				if score > bestScore {
-					bestScore = score
-					bestMoves = []board.Point{{X: x, Y: y}}
-				} else if score == bestScore {
-					bestMoves = append(bestMoves, board.Point{X: x, Y: y})
+	directions := [][2]int{
+		{1, 0},  // 水平 -
+		{0, 1},  // 垂直 |
+		{1, 1},  // 正斜 \
+		{1, -1}, // 反斜 /
+	}
+
+	fives := 0
+	openFours := 0
+	blockedFours := 0
+	openThrees := 0
+	blockedThrees := 0
+	openTwos := 0
+
+	opp := opponent(p)
+
+	for _, d := range directions {
+		dx, dy := d[0], d[1]
+
+		// Build a 9-cell window centered at (x, y)
+		// 0: empty, 1: player p, 2: blocked (opponent or wall)
+		var line [9]int
+		for i := -4; i <= 4; i++ {
+			if i == 0 {
+				line[4] = 1 // the stone we are placing
+				continue
+			}
+			nx, ny := x+dx*i, y+dy*i
+			if nx < 0 || nx >= b.Size || ny < 0 || ny >= b.Size {
+				line[i+4] = 2 // Wall
+			} else if b.Grid[ny][nx] == opp {
+				line[i+4] = 2 // Opponent
+			} else if b.Grid[ny][nx] == p {
+				line[i+4] = 1 // Player
+			} else {
+				line[i+4] = 0 // Empty
+			}
+		}
+
+		// Analyze 5-cell windows in the 9-cell array
+		dirMax := 0
+		hasOpenFour := false
+		hasBlockedFour := false
+		hasOpenThree := false
+		hasBlockedThree := false
+		hasOpenTwo := false
+
+		for s := 0; s <= 4; s++ {
+			pCount := 0
+			hasBlock := false
+			for k := 0; k < 5; k++ {
+				if line[s+k] == 2 {
+					hasBlock = true
+					break
+				}
+				if line[s+k] == 1 {
+					pCount++
+				}
+			}
+			if hasBlock {
+				continue
+			}
+
+			if pCount == 5 {
+				if dirMax < ScoreFive {
+					dirMax = ScoreFive
+				}
+			} else if pCount == 4 {
+				leftOpen := (s > 0 && line[s-1] == 0)
+				rightOpen := (s+5 < 9 && line[s+5] == 0)
+				if leftOpen && rightOpen {
+					hasOpenFour = true
+				} else if leftOpen || rightOpen {
+					hasBlockedFour = true
+				}
+			} else if pCount == 3 {
+				leftOpen := (s > 0 && line[s-1] == 0)
+				rightOpen := (s+5 < 9 && line[s+5] == 0)
+				if leftOpen && rightOpen {
+					hasOpenThree = true
+				} else if leftOpen || rightOpen {
+					hasBlockedThree = true
+				}
+			} else if pCount == 2 {
+				leftOpen := (s > 0 && line[s-1] == 0)
+				rightOpen := (s+5 < 9 && line[s+5] == 0)
+				if leftOpen && rightOpen {
+					hasOpenTwo = true
 				}
 			}
 		}
+
+		if dirMax == ScoreFive {
+			fives++
+		} else if hasOpenFour {
+			openFours++
+		} else if hasBlockedFour {
+			blockedFours++
+		} else if hasOpenThree {
+			openThrees++
+		} else if hasBlockedThree {
+			blockedThrees++
+		} else if hasOpenTwo {
+			openTwos++
+		}
 	}
 
-	if len(bestMoves) > 0 {
-		return bestMoves[rand.Intn(len(bestMoves))]
+	// Combine combination threats
+	if fives > 0 {
+		return ScoreFive
 	}
-	return a.randomMove(b)
+	if openFours > 0 || blockedFours >= 2 {
+		return ScoreOpenFour
+	}
+	if blockedFours > 0 && openThrees > 0 {
+		return ScoreFourThree
+	}
+	if openThrees >= 2 {
+		return ScoreDoubleThree
+	}
+
+	total := 0
+	if blockedFours > 0 {
+		total += ScoreBlockedFour * blockedFours
+	}
+	if openThrees > 0 {
+		total += ScoreOpenThree * openThrees
+	}
+	if blockedThrees > 0 {
+		total += ScoreBlockedThree * blockedThrees
+	}
+	if openTwos > 0 {
+		total += ScoreOpenTwo * openTwos
+	}
+
+	// Positional center bias (closer to center of board is slightly better)
+	center := float64(b.Size-1) / 2.0
+	dist := math.Abs(float64(x)-center) + math.Abs(float64(y)-center)
+	centerBonus := int((float64(b.Size) - dist) * 5)
+	if centerBonus > 0 {
+		total += centerBonus
+	}
+
+	return total
 }
 
 func opponent(p board.Player) board.Player {
@@ -38,92 +176,4 @@ func opponent(p board.Player) board.Player {
 		return board.White
 	}
 	return board.Black
-}
-
-// EvaluatePosition returns a score for placing a stone of player p at (x,y)
-func EvaluatePosition(b *board.Board, x, y int, p board.Player) int {
-	directions := []board.Point{
-		{X: 1, Y: 0},
-		{X: 0, Y: 1},
-		{X: 1, Y: 1},
-		{X: 1, Y: -1},
-	}
-
-	totalScore := 0
-
-	for _, d := range directions {
-		consecutive := 1
-		blockedEnd1 := false
-		blockedEnd2 := false
-
-		// Check Forward
-		for i := 1; i <= 4; i++ {
-			nx, ny := x+d.X*i, y+d.Y*i
-			if nx < 0 || nx >= board.Size || ny < 0 || ny >= board.Size {
-				blockedEnd1 = true
-				break
-			}
-			if b.Grid[ny][nx] == p {
-				consecutive++
-			} else if b.Grid[ny][nx] == board.Empty {
-				break
-			} else {
-				blockedEnd1 = true
-				break
-			}
-		}
-
-		// Check Backward
-		for i := 1; i <= 4; i++ {
-			nx, ny := x-d.X*i, y-d.Y*i
-			if nx < 0 || nx >= board.Size || ny < 0 || ny >= board.Size {
-				blockedEnd2 = true
-				break
-			}
-			if b.Grid[ny][nx] == p {
-				consecutive++
-			} else if b.Grid[ny][nx] == board.Empty {
-				break
-			} else {
-				blockedEnd2 = true
-				break
-			}
-		}
-
-		totalScore += getScore(consecutive, blockedEnd1, blockedEnd2)
-	}
-	return totalScore
-}
-
-func getScore(consecutive int, b1, b2 bool) int {
-	if consecutive >= 5 {
-		return 1000000 // Win
-	}
-	if b1 && b2 {
-		return 0 // completely blocked
-	}
-
-	switch consecutive {
-	case 4:
-		if b1 || b2 {
-			return 10000 // Blocked 4 (冲四)
-		}
-		return 100000 // Open 4 (活四) - Guaranteed win next turn
-	case 3:
-		if b1 || b2 {
-			return 1000 // Blocked 3 (眠三)
-		}
-		return 10000 // Open 3 (活三)
-	case 2:
-		if b1 || b2 {
-			return 100 // Blocked 2 (眠二)
-		}
-		return 1000 // Open 2 (活二)
-	case 1:
-		if b1 || b2 {
-			return 10
-		}
-		return 100 // Open 1
-	}
-	return 0
 }

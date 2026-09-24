@@ -1,6 +1,6 @@
 package board
 
-const Size = 15
+const DefaultSize = 15
 
 type Player int
 
@@ -13,16 +13,17 @@ const (
 func (p Player) String() string {
 	switch p {
 	case Black:
-		return "Black (黒)"
+		return "Black"
 	case White:
-		return "White (白)"
+		return "White"
 	default:
 		return "Empty"
 	}
 }
 
 type Board struct {
-	Grid         [Size][Size]Player
+	Size         int
+	Grid         [][]Player
 	LastMove     Move
 	MoveHistory  []Move
 	Winner       Player
@@ -38,15 +39,24 @@ type Move struct {
 	Player Player
 }
 
-func NewBoard() *Board {
+func NewBoard(size int) *Board {
+	if size <= 0 {
+		size = DefaultSize
+	}
+	grid := make([][]Player, size)
+	for i := range grid {
+		grid[i] = make([]Player, size)
+	}
 	return &Board{
+		Size:        size,
+		Grid:        grid,
 		LastMove:    Move{Point{-1, -1}, Empty},
 		MoveHistory: make([]Move, 0),
 	}
 }
 
 func (b *Board) IsValidMove(x, y int) bool {
-	if x < 0 || x >= Size || y < 0 || y >= Size {
+	if x < 0 || x >= b.Size || y < 0 || y >= b.Size {
 		return false
 	}
 	return b.Grid[y][x] == Empty
@@ -94,7 +104,7 @@ func (b *Board) checkWin(x, y int, p Player) {
 		// Forward
 		for i := 1; i < 5; i++ {
 			nx, ny := x+d.X*i, y+d.Y*i
-			if nx >= 0 && nx < Size && ny >= 0 && ny < Size && b.Grid[ny][nx] == p {
+			if nx >= 0 && nx < b.Size && ny >= 0 && ny < b.Size && b.Grid[ny][nx] == p {
 				count++
 				line = append(line, Point{nx, ny})
 			} else {
@@ -105,7 +115,7 @@ func (b *Board) checkWin(x, y int, p Player) {
 		// Backward
 		for i := 1; i < 5; i++ {
 			nx, ny := x-d.X*i, y-d.Y*i
-			if nx >= 0 && nx < Size && ny >= 0 && ny < Size && b.Grid[ny][nx] == p {
+			if nx >= 0 && nx < b.Size && ny >= 0 && ny < b.Size && b.Grid[ny][nx] == p {
 				count++
 				line = append(line, Point{nx, ny})
 			} else {
@@ -122,8 +132,8 @@ func (b *Board) checkWin(x, y int, p Player) {
 }
 
 func (b *Board) IsFull() bool {
-	for y := 0; y < Size; y++ {
-		for x := 0; x < Size; x++ {
+	for y := 0; y < b.Size; y++ {
+		for x := 0; x < b.Size; x++ {
 			if b.Grid[y][x] == Empty {
 				return false
 			}
